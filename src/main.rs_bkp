@@ -1,0 +1,167 @@
+#![allow(unused_imports)]
+#![allow(dead_code)]
+use std::fs::{self, File};
+use hex;
+use std::io::{self, Write};
+use sysinfo::System;
+use rand::Rng;
+use aes_gcm::AeadCore;
+use std::env;
+use std::path::PathBuf;
+use argon2::{
+    password_hash::{
+        rand_core::OsRng,
+        PasswordHash, PasswordHasher, PasswordVerifier, SaltString
+    },
+    Argon2
+};
+use std::io::{BufRead, BufReader};
+use std::error::Error;
+const SALT_LENGTH: usize = 16;
+
+struct FileCheck {
+    file_name: String,
+    dir_path: String,
+}
+
+impl FileCheck{
+    fn check_file(&self) -> Result<bool, std::io::Error>{
+        let full_path = format!("{}/{}", self.dir_path, self.file_name);
+        let check_dir = fs::metadata(&self.dir_path);
+            if check_dir.is_err(){
+             return Err(std::io::Error::new(std::io::ErrorKind::NotFound, "[Error] Directory not found",));
+            }
+       
+        match std::fs::metadata(full_path) {
+            Ok(_) => Ok(true),
+            Err(e) => if e.kind() == std::io::ErrorKind::NotFound{
+                Ok(false)
+            }else{
+                Err(e)
+            }
+        }
+                
+    }
+}
+
+//struct Args {
+//}
+
+fn get_cpu_threads() -> usize{
+    let mut sys = System::new_all();
+    sys.refresh_all();
+    let cpu_threads = sys.cpus().len();
+    return cpu_threads / 2
+}
+
+fn set_master_password() -> Result<String, Box<dyn Error>> {
+    println!("> Enter the Master Password: ");
+    io::stdout().flush()?;
+
+    let mut master_password = String::new();
+    io::stdin()
+        .read_line(&mut master_password)?;
+    
+    let master_password = master_password.trim();
+   
+    Ok (master_password.to_string())
+   
+}
+
+
+fn verify_master_password(password: &str) -> Result<bool, std::io::Error> {
+    let home_dir = env::var("HOME").expect("[Error] Failed to get Home dir");
+    let mut file_path = PathBuf::from(home_dir);
+    file_path.push("encrypt_app");
+    file_path.push("master_password");        
+
+    let file = File::open(file_path)?;
+    let reader = BufReader::new(file);
+
+    let mut hashed_password = String::new(); 
+    for line in reader.lines() {
+        let line = line?; 
+        hashed_password = line.trim().to_string(); 
+    }
+
+    let parsed_hash = PasswordHash::new(&hashed_password).map_err(|e| {
+        eprintln!("[Error] Invalid hash: {}", e);
+        std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid password hash")
+    })?;
+
+    match Argon2::default().verify_password(password.as_bytes(), &parsed_hash) {
+        Ok(_) => Ok(true), 
+        Err(e) => {
+            eprintln!("[Error] Incorrect password provided: {}", e);
+            Ok(false) 
+        }
+    }
+}
+
+
+fn hash_password(password: &String) -> Result<String, String>{
+    let mut os_rng = OsRng;
+    let salt = SaltString::generate(&mut os_rng);
+    let argon2 = Argon2::default();
+    match argon2.hash_password(password.as_bytes(), &salt) {
+        Ok(hash) => Ok(hash.to_string()),
+        Err(e) => Err(format!("[Error] Couldn't hash the password:{}", e)),
+    }
+}
+
+
+fn create_app_dir(hashedpassword: &[u8]) -> io::Result<()> {
+    let home_dir = env::var("HOME").expect("[Error] Failed to get Home dir");
+    let create_app_dir = PathBuf::from(home_dir).join("encrypt_app");
+    
+    if create_app_dir.exists() {
+            println!("Directory already exists at: {:?}", create_app_dir);
+        } else {
+            match fs::create_dir(&create_app_dir){
+                Ok(_) => println!("[*] Successfully created dir:{:?}", create_app_dir),
+                
+                Err(e) => println!("[Error] Failed to create dir:{:?}, {}", create_app_dir, e),
+        }
+    }
+    
+    let file_path = PathBuf::from(create_app_dir).join("master_password");
+
+    if file_path.exists() {
+            println!("[*] File already exists at: {:?}", file_path);
+        } else {
+            match File::create(&file_path){
+                Ok(mut file) => { 
+                    println!("[*] Successfully created file with MasterPassword:{:?}", file_path);
+                    file.write_all(hashedpassword)?;
+                }
+
+                
+                Err(e) => println!("[Error] Failed to create file:{:?}, {}", file_path, e),
+        }
+    }
+
+Ok(())
+}
+
+fn main()  {
+
+
+      match set_master_password() {
+        Ok(password) => {
+            match hash_password(&password) { 
+                Ok(hashed) => {
+                    println!("Hashed Password: {}", hashed);
+                }
+                Err(e) => {
+                    eprintln!("{}", e);
+                }
+            }
+        }
+        Err(e) => {
+            eprintln!("{}", e); 
+        }
+    }
+      
+    
+
+}
