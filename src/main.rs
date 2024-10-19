@@ -2,10 +2,10 @@
 #![allow(dead_code)]
 use std::fs::{self, File};
 use hex;
+use std::io::Read;
 use std::io::{self, Write};
 use sysinfo::System;
 use rand::Rng;
-use aes_gcm::AeadCore;
 use std::env;
 use argon2::{
     password_hash::{
@@ -18,6 +18,10 @@ use std::io::{BufRead, BufReader};
 use std::error::Error;
 use pico_args::Arguments;
 use std::path::{Path, PathBuf};
+use aes_gcm::{
+    aead::{Aead, AeadCore, AeadInPlace, KeyInit, },
+    Aes256Gcm, Nonce, 
+};
 const SALT_LENGTH: usize = 16;
 
 struct FileCheck {
@@ -27,16 +31,16 @@ struct FileCheck {
 
 impl FileCheck{
     fn check_file(&self) -> Result<bool, std::io::Error>{
-        let full_path = format!("{}/{}", self.dir_path, self.file_name);
+        let file_path = format!("{}/{}", self.dir_path, self.file_name);
         let check_dir = fs::metadata(&self.dir_path);
             if check_dir.is_err(){
              return Err(std::io::Error::new(std::io::ErrorKind::NotFound, "[Error] Directory not found"));
             }
        
-        match std::fs::metadata(full_path) {
+        match std::fs::metadata(file_path) {
             Ok(_) => Ok(true),
             Err(e) => if e.kind() == std::io::ErrorKind::NotFound{
-                eprintln!("[Error] File not found: {e}");
+                eprintln!("[Error]: {e}");
                 Ok(false)
             }else{
                 Ok(true)
@@ -143,20 +147,87 @@ fn create_app_dir(hashedpassword: &[u8]) -> io::Result<()> {
 Ok(())
 }
 
-//fn restrict_dir(path: &str) -> bool{
-//   let restrict_dir_path = vec![
-//    "/",                // Root directory
-//    "/etc/",           // Configuration files
-//    "/bin/",           // Essential binaries
-//    "/boot/",          // Boot files
-//    "/dev/",           // Device files
-//    "/proc/",          // Kernel and process information
-//    "/sys/",           // System files
-//    "/var/",           // Variable data files (logs, databases)
-//    "/usr/",           // User programs and utilities
-//];
-//
-//}
+fn encrypt_file(file: &str, path: &str) -> Result<(), std::io::Error> {
+    let file_to_encrypt = FileCheck {
+        file_name: file.to_string(),
+        dir_path: path.to_string(),
+    };
+
+    match file_to_encrypt.check_file() {
+        Ok(true) => {
+            println!("[*] Starting encryption for file: {}", &file);
+
+            let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
+            let key = Aes256Gcm::generate_key(&mut OsRng);
+            let cipher = Aes256Gcm::new(&key);
+
+            let file_path = format!("{}/{}", path, file);
+            let mut file = File::open(&file_path)?;
+            let mut file_data = Vec::new();
+            file.read_to_end(&mut file_data)?;
+
+            let encrypted_data = cipher.encrypt(&nonce, file_data.as_ref())
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+
+            println!(
+                "nonce: {:?}\nkey: {:?}\nfile_path: {:?}\nencrypted_data: {:?}",
+                nonce, key, file_path, encrypted_data
+            );
+
+        }
+        Ok(false) => {
+            eprintln!("[Error] File does not exist.");
+        }
+        Err(e) => {
+            eprintln!("[Error]: {}", e);
+            return Err(e);
+        }
+    }
+    Ok(())
+}
+
+fn restrict_dir(input_path: &PathBuf) -> bool {
+    let restrict_dir_path = [
+        "/root",
+        "/etc",  // Configuration files
+        "/bin",  // Essential binaries
+        "/boot", // Boot files
+        "/dev",  // Device files
+        "/proc", // Kernel and process information
+        "/sys",  // System files
+        "/var",  // Variable data files (logs, databases)
+        "/usr",  // User programs and utilities
+    ];
+    let path = input_path.to_str().unwrap_or("");
+    
+    if path == "/" {
+        println!("Access denied: root directory!");
+        return true;
+    }
+
+    let is_restricted = restrict_dir_path.iter().any(|restrict| {
+        if path == *restrict {
+            return true;
+        }
+        
+        if path.starts_with(restrict) {
+            let remaining = &path[restrict.len()..];
+            if remaining.starts_with('/') {
+                return true;
+            }
+        }
+        
+        false
+    });
+
+    if is_restricted {
+        println!("Access denied: restricted directory!");
+    } else {
+        println!("Access granted: {}", path);
+    }
+    
+    is_restricted
+}
 
 fn print_usage() {
     println!("Usage:");
@@ -172,6 +243,7 @@ fn print_usage() {
     println!("  ./neeed_to_change -d /path/to/dir --decrypt  # Decrypt a directory");
 }
 
+
 fn main() {
     let mut pargs = pico_args::Arguments::from_env();
     let dir: Option<String> = pargs.opt_value_from_str("-d").unwrap();
@@ -179,7 +251,7 @@ fn main() {
     let decrypt = pargs.contains("--decrypt");
     let help = pargs.contains("-h") || pargs.contains("--help");
     let args: Vec<String> = env::args().collect();
- 
+
     let mut files: Vec<String> = Vec::new();
     let mut is_flag = false;
 
@@ -218,13 +290,17 @@ fn main() {
         todo!();
     }
     if encrypt {
-        todo!();
+        
+        for file in files{
+            let _  =  encrypt_file(&file, "/home/vamsi/scripts/file_encrypt/src");
+        }
     }
 
-    let dir = dir.unwrap_or_else(|| current_dir.display().to_string());
+        let dir = dir.unwrap_or_else(|| current_dir.display().to_string());
+        let dir = dir.trim();
+        let buf = PathBuf::from(dir);
+        let _ = restrict_dir(&buf);
 
-   //if restrict_dir(&dir) {
-   //    println!("Cant encrypt: {}", dir);
-   //}
+    
     
 }
