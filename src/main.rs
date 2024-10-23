@@ -57,22 +57,35 @@ impl FileValidator {
 struct ApplicationDirectoryManager;
 
 impl ApplicationDirectoryManager {
-    fn validate_app_directory() -> Result<bool, io::Error> {
-        let app_directory = Self::get_application_directory();
-        Ok(app_directory.exists())
+
+fn validate_app_directory() -> bool {
+        let (app_path, _)= Self::get_application_directory();       
+        app_path.exists()
+}
+ 
+fn validate_master_password_file() -> Result<bool, io::Error> {
+        let (_, password_path) = Self::get_application_directory();
+         match File::open(password_path.clone()){
+            Ok(_) => Ok(password_path.exists()),
+            Err(_) => {
+                Ok(false)
+        }
     }
 
-    fn validate_master_password_file() -> Result<bool, io::Error> {
-        let app_directory = Self::get_application_directory();
-        let master_password_path = app_directory.join("master_password");
-
-        Ok(master_password_path.exists())
+}
+    
+fn get_application_directory() -> (PathBuf, PathBuf) {
+       let home_directory = PathBuf::from(env::var("HOME").expect("[Error] Failed to get Home dir"));
+    
+        let mut encrypt_app_path = home_directory.clone();
+            encrypt_app_path.push("encrypt_app");
+    
+        let mut master_password_path = encrypt_app_path.clone();
+            master_password_path.push("master_password");
+    
+        (encrypt_app_path, master_password_path)        
     }
-
-    fn get_application_directory() -> PathBuf {
-        let home_directory = env::var("HOME").expect("[Error] Failed to get Home dir");
-        PathBuf::from(home_directory).join("encrypt_app")
-    }
+    
 }
 
 fn calculate_available_threads() -> usize {
@@ -82,34 +95,41 @@ fn calculate_available_threads() -> usize {
     return total_threads / 2
 }
 
-fn validate_master_password(password_input: &str) -> Result<bool, std::io::Error> {
-    let home_directory = env::var("HOME").expect("[Error] Failed to get Home dir");
-    let mut password_file_path = PathBuf::from(home_directory);
-    password_file_path.push("encrypt_app");
-    password_file_path.push("master_password");        
+fn validate_master_password(password_input: &str) -> Result<bool, io::Error> {
+    match ApplicationDirectoryManager::validate_master_password_file() {
+        Ok(_) => {
 
-    let password_file = File::open(password_file_path)?;
-    let file_reader = BufReader::new(password_file);
+            let (_, password_file_path) = ApplicationDirectoryManager::get_application_directory();
+            
+            let file = File::open(password_file_path)?;
+            let file_reader = BufReader::new(file);
+            
+            let mut stored_hash = String::new();
+            for line in file_reader.lines() {
+                let line = line?;
+                stored_hash = line.trim().to_string();
+            }
 
-    let mut stored_hash = String::new(); 
-    for line in file_reader.lines() {
-        let line = line?; 
-        stored_hash = line.trim().to_string(); 
-    }
+            let parsed_hash = PasswordHash::new(&stored_hash).map_err(|e| {
+                eprintln!("[Error] Invalid hash: {}", e);
+                io::Error::new(io::ErrorKind::InvalidData, "[Error] Invalid password hash")
+            })?;
 
-    let parsed_hash = PasswordHash::new(&stored_hash).map_err(|e| {
-        eprintln!("[Error] Invalid hash: {}", e);
-        std::io::Error::new(std::io::ErrorKind::InvalidData, "[Error] Invalid password hash")
-    })?;
-
-    match Argon2::default().verify_password(password_input.as_bytes(), &parsed_hash) {
-        Ok(_) => Ok(true), 
+            match Argon2::default().verify_password(password_input.as_bytes(), &parsed_hash) {
+                Ok(_) => Ok(true),  // Password is correct
+                Err(e) => {
+                    eprintln!("[Error] Incorrect password: {}", e);
+                    Ok(false)  // Password is incorrect
+                }
+            }
+        }
         Err(e) => {
-            eprintln!("[Error] Incorrect password provided: {}", e);
-            Ok(false) 
+            eprintln!("[Error] Can't validate master password file: {e}");
+            Err(e)
         }
     }
 }
+
 
 fn generate_password_hash() -> Result<String, std::io::Error> {
     println!("> Enter the Master Password: ");
@@ -134,10 +154,13 @@ fn generate_password_hash() -> Result<String, std::io::Error> {
 }
 
 fn initialize_application_directory(hashed_master_password: &[u8]) -> io::Result<()> {
-    let home_directory = env::var("HOME").expect("[Error] Failed to get Home dir");
-    let app_directory_path = PathBuf::from(home_directory).join("encrypt_app");
-    
-    if ApplicationDirectoryManager::validate_app_directory()? {
+    //let home_directory = env::var("HOME").expect("[Error] Failed to get Home dir");
+    //let app_directory_path = PathBuf::from(home_directory).join("encrypt_app");
+   
+    let (_, master_password_path) = ApplicationDirectoryManager::get_application_directory();
+    let (app_directory_path, _) = ApplicationDirectoryManager::get_application_directory();
+
+    if ApplicationDirectoryManager::validate_app_directory() {
         println!("Directory already exists at: {:?}", app_directory_path);
  
     } else {
@@ -148,7 +171,7 @@ fn initialize_application_directory(hashed_master_password: &[u8]) -> io::Result
         }
     }
     
-    let master_password_path = PathBuf::from(app_directory_path).join("master_password");
+    //let master_password_path = PathBuf::from(app_directory_path).join("master_password");
     
     if ApplicationDirectoryManager::validate_master_password_file()? {
         println!("[*] File already exists at: {:?}", master_password_path);
@@ -375,7 +398,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         let master_password: String = rpassword::read_password().expect("Error reading password");
 
-        if ApplicationDirectoryManager::validate_app_directory()? {
+        if ApplicationDirectoryManager::validate_app_directory() {
             if ApplicationDirectoryManager::validate_master_password_file()? {
                 match validate_master_password(&master_password) {
                     Ok(is_valid) => {
@@ -398,7 +421,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 eprintln!("[Error] Master password file not found.");
             }
         } else {
-            eprintln!("[Error] Application directory not found.");
+            eprintln!("[Error] Application directory not found. Aborting Decryption");
         }
     }
 
@@ -407,7 +430,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         io::stdout().flush()?;
         let master_password = rpassword::read_password().expect("Error reading password");
 
-        if ApplicationDirectoryManager::validate_app_directory()? {
+        if ApplicationDirectoryManager::validate_app_directory() {
             if ApplicationDirectoryManager::validate_master_password_file()? {
                 match validate_master_password(&master_password) {
                     Ok(true) => {

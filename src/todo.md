@@ -1,6 +1,5 @@
-/*
 todo:
-Handle directory access validation.
+Handle directory access validation-done
 Implement directory resolution logic.
 Refactor master password validation.
 Handle Missing Password File
@@ -12,5 +11,4 @@ Add file and directory existence checks.
 Documentation and comments.
 may need to add proper logging
 Improve Error Handling in Encryption and Decryption
-*/
 
