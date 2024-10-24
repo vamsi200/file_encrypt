@@ -35,17 +35,22 @@ struct FileValidator {
 }
 
 impl FileValidator {
-    fn validate_file_exists(&self) -> Result<bool, std::io::Error> {
-        let complete_path = format!("{}/{}", self.target_directory, self.target_file);
+    fn validate_dir_exists(&self) -> Result<bool, std::io::Error> {
         let directory_status = fs::metadata(&self.target_directory);
             if directory_status.is_err() {
              return Err(std::io::Error::new(std::io::ErrorKind::NotFound, "[Error] Directory not found"));
             }
-       
+            else{
+                return Ok(true)
+            }
+    }
+
+    fn validate_file_exists(&self) -> Result<bool, std::io::Error>{
+        let complete_path = format!("{}/{}", self.target_directory, self.target_file);
         match std::fs::metadata(complete_path) {
             Ok(_) => Ok(true),
             Err(e) => if e.kind() == std::io::ErrorKind::NotFound {
-                eprintln!("[Error]: {e}");
+                eprintln!("[Error]: File not found {e}");
                 Ok(false)
             } else {
                 Ok(true)
@@ -53,6 +58,7 @@ impl FileValidator {
         }
     }
 }
+
 
 struct ApplicationDirectoryManager;
 
@@ -87,6 +93,7 @@ fn get_application_directory() -> (PathBuf, PathBuf) {
     }
     
 }
+
 
 fn calculate_available_threads() -> usize {
     let mut system_info = System::new_all();
@@ -237,37 +244,50 @@ fn encrypt_target_file(target_file: &str, output_path: &str, master_password: &s
         target_directory: output_path.to_string(),
     };
 
-    match file_validator.validate_file_exists() {
+
+    match file_validator.validate_dir_exists() {
         Ok(true) => {
-            println!("[*] Starting encryption for file: {}", target_file);
-            let encryption_nonce = Aes256Gcm::generate_nonce(&mut OsRng);
-            let mut password_salt = [0u8; 16];
-            OsRng.fill_bytes(&mut password_salt);
+            match file_validator.validate_file_exists() {  
+                Ok(true) => {
+                    println!("[*] Starting encryption for file: {}", target_file);
+                    let encryption_nonce = Aes256Gcm::generate_nonce(&mut OsRng);
+                    let mut password_salt = [0u8; 16];
+                    OsRng.fill_bytes(&mut password_salt);
 
-            let encryption_key = generate_encryption_key(master_password, &password_salt);
-            let cipher = Aes256Gcm::new_from_slice(&encryption_key)
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+                    let encryption_key = generate_encryption_key(master_password, &password_salt);
+                    let cipher = Aes256Gcm::new_from_slice(&encryption_key)
+                        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
 
-            let input_file_path = format!("{}/{}", output_path, target_file);
-            let mut input_file = File::open(&input_file_path)?;
-            let mut file_content = Vec::new();
-            input_file.read_to_end(&mut file_content)?;
+                    let input_file_path = format!("{}/{}", output_path, target_file);
+                    let mut input_file = File::open(&input_file_path)?;
+                    let mut file_content = Vec::new();
+                    input_file.read_to_end(&mut file_content)?;
 
-            let encrypted_content = cipher.encrypt(&encryption_nonce, file_content.as_ref())
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+                    let encrypted_content = cipher.encrypt(&encryption_nonce, file_content.as_ref())
+                        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
 
-            let encrypted_file_path = format!("{}/{}.enc", output_path, target_file);
-            let mut encrypted_file = File::create(&encrypted_file_path)?;
+                    let encrypted_file_path = format!("{}/{}.enc", output_path, target_file);
+                    let mut encrypted_file = File::create(&encrypted_file_path)?;
 
-            encrypted_file.write_all(&password_salt)?;
-            encrypted_file.write_all(&encryption_nonce)?;
-            encrypted_file.write_all(&encrypted_content)?;
+                    encrypted_file.write_all(&password_salt)?;
+                    encrypted_file.write_all(&encryption_nonce)?;
+                    encrypted_file.write_all(&encrypted_content)?;
 
-            println!("[*] Encrypted file created at: {}", encrypted_file_path);
-                        
+                    println!("[*] Encrypted file created at: {}", encrypted_file_path);
+                }
+                Ok(false) => {
+                    eprintln!("[Error] File does not exist");
+                }
+               
+                Err(e) => {
+                      eprintln!("[Error]: {}", e);
+                        return Err(e);
+
+                }
         }
+}
         Ok(false) => {
-            eprintln!("[Error] File does not exist.");
+            eprintln!("[Error] Directory does not exist.");
         }
         Err(e) => {
             eprintln!("[Error]: {}", e);
@@ -342,6 +362,40 @@ fn display_usage_instructions() {
     println!("  ./neeed_to_change -d /path/to/dir --decrypt  # Decrypt a directory");
 }
 
+fn validate_and_exec<T>(input_files:&[String], directory_path: &PathBuf, opp: T,) -> Result<(), Box<dyn Error>>
+    where T: Fn(&str, &str, &str) -> Result<(), std::io::Error>,{
+        println!("> Enter your master password: ");
+        io::stdout().flush()?;
+        let master_password = rpassword::read_password().expect("Error reading password");
+
+        if ApplicationDirectoryManager::validate_app_directory(){
+            if ApplicationDirectoryManager::validate_master_password_file()? {
+                match validate_master_password(&master_password) {
+                    Ok(is_valid) => {
+                        if is_valid {
+                            for file_path in input_files {
+                                let result = opp(file_path, directory_path.to_str().unwrap(), &master_password);
+                                if let Err(e) = result {
+                                    eprintln!("[Error] Failed to process file '{}': {}", file_path, e);
+                                }
+                            }
+                        } else {
+                            eprintln!("[Error] Incorrect password. Operation aborted.");
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("[Error] Password validation failed: {}", e);
+                    }
+                }
+            } else {
+                eprintln!("[Error] Master password file not found.");
+            }
+        } else {
+            eprintln!("[Error] Application directory not found.");
+        }
+
+        Ok(())
+}        
 
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -377,88 +431,65 @@ fn main() -> Result<(), Box<dyn Error>> {
     let normalized_path = resolved_directory.trim();
     let directory_path = PathBuf::from(normalized_path);
 
-    if validate_directory_access(&directory_path) {
-        eprintln!("[Error] Directory validation failed: Access to the directory is restricted.");
-        return Ok(()); // Return early if directory access is denied
-    }
-
-    if !perform_decryption && !perform_encryption && display_help {
+if !perform_decryption && !perform_encryption && display_help {
         display_usage_instructions();
         return Ok(());
+}
+
+match ApplicationDirectoryManager::validate_master_password_file() {
+    Ok(true) => {
+        println!("[INFO] Password File exists.. Continuing..");
     }
+    Ok(false) => {
+        println!("[INFO] Password File doesn't exist, Please set a Master Password to start");
+        
+        match generate_password_hash() {
+            Ok(hash) => {
+                let hashed_password_bytes = hash.as_bytes();
+                if let Err(e) = initialize_application_directory(hashed_password_bytes) {
+                    eprintln!("[ERROR] Couldn't Save Master Password: {}", e);
+                } else {
+                    println!("[INFO] Successfully created & saved Master Password");
+                }
+            }
+            Err(e) => eprintln!("[ERROR] Couldn't hash password: {}", e),
+        }
+    }
+    Err(e) => eprintln!("[ERROR] Couldn't verify password file: {}", e),
+}
+
+    if validate_directory_access(&directory_path) {
+        eprintln!("[Error] Directory validation failed: Access to the directory is restricted: {}", directory_path.display());
+        return Ok(()); // Return early if directory access is denied
+    }
+    
+
 
     if is_file_input && input_files.is_empty() {
         eprintln!("[Error] No files provided for encryption or decryption.");
         return Ok(());
     }
     
-  if perform_decryption {
-        println!("> Enter your master password: ");
-        io::stdout().flush()?;
-
-        let master_password: String = rpassword::read_password().expect("Error reading password");
-
-        if ApplicationDirectoryManager::validate_app_directory() {
-            if ApplicationDirectoryManager::validate_master_password_file()? {
-                match validate_master_password(&master_password) {
-                    Ok(is_valid) => {
-                        if is_valid {
-                            for file_path in &input_files {
-                                let result = decrypt_encrypted_file(file_path, directory_path.to_str().unwrap(), &master_password);
-                                if let Err(e) = result {
-                                    eprintln!("[Error] Failed to decrypt file '{}': {}", file_path, e);
-                                }
-                            }
-                        } else {
-                            eprintln!("[Error] Incorrect password, decryption aborted.");
-                        }
-                    }
-                    Err(e) => {
-                        eprintln!("[Error] Password validation failed: {}", e);
-                    }
-                }
-            } else {
-                eprintln!("[Error] Master password file not found.");
+    if perform_decryption {
+        for dec_file in input_files.iter() {
+            if dec_file.ends_with(".enc"){
+           validate_and_exec(&input_files, &directory_path, decrypt_encrypted_file)?;
+        } 
+            else{
+                 println!("[ERROR] Couldn't decrypt files with ext: .enc");
             }
-        } else {
-            eprintln!("[Error] Application directory not found. Aborting Decryption");
         }
     }
 
     if perform_encryption {
-        println!("> Enter your master password: ");
-        io::stdout().flush()?;
-        let master_password = rpassword::read_password().expect("Error reading password");
+        for enc_file in input_files.iter(){
+        if enc_file.ends_with(".enc"){
+             println!("[ERROR] Couldn't encrypt files with ext: .enc");
 
-        if ApplicationDirectoryManager::validate_app_directory() {
-            if ApplicationDirectoryManager::validate_master_password_file()? {
-                match validate_master_password(&master_password) {
-                    Ok(true) => {
-                        for file_path in &input_files {
-                            match encrypt_target_file(file_path, directory_path.to_str().unwrap(), &master_password) {
-                                Ok(_) => {
-                                    println!("Successfully encrypted '{}'", file_path);
-                                }
-                                Err(e) => {
-                                    eprintln!("[Error] Failed to encrypt '{}': {}", file_path, e);
-                                }
-                            }
-                        }
-                    }
-                    Ok(false) => {
-                        eprintln!("[Error] Incorrect master password. Encryption aborted.");
-                    }
-                    Err(e) => {
-                        eprintln!("[Error] Failed to validate master password: {}", e);
-                    }
-                }
-            } else {
-                eprintln!("[Error] Master password file not found. Encryption aborted.");
-            }
-        } else {
-            eprintln!("[Error] Application directory is invalid or missing. Encryption aborted.");
+        } else{
+            validate_and_exec(&input_files, &directory_path, encrypt_target_file)?;
         }
-    }
-
+    }}
+    
     Ok(())
 }

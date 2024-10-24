@@ -1,14 +1,12 @@
 todo:
 Handle directory access validation-done
-Implement directory resolution logic.
-Refactor master password validation.
-Handle Missing Password File
+Implement directory resolution logic-done
+Refactor master password validation-done
 add output messages -- Improper Password Prompt in Encryption.
-refractor FileValidator
-check to NOT encrypt already encrypted file - Hardcoding Encryption/Decryption File Extensions
+refractor FileValidator-done
+check to NOT encrypt already encrypted file - Hardcoding Encryption/Decryption File Extensions -done
 Error handling in encryption/decryption functions.
 Add file and directory existence checks.
 Documentation and comments.
 may need to add proper logging
-Improve Error Handling in Encryption and Decryption
 
