@@ -9,4 +9,4 @@ Error handling in encryption/decryption functions.
 Add file and directory existence checks.
 Documentation and comments.
 may need to add proper logging
-
+**add threads functionality
