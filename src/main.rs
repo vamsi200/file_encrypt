@@ -125,10 +125,10 @@ fn validate_master_password(password_input: &str) -> Result<bool, io::Error> {
 }
 
 fn generate_password_hash() -> Result<String, std::io::Error> {
-    println!("> Enter the Master Password: ");
+    print!("> Enter the Master Password: ");
     io::stdout().flush()?;
-    let mut master_password_input = String::new();
-    io::stdin().read_line(&mut master_password_input)?;
+    //io::stdin().read_line(&mut master_password_input)?;
+    let master_password_input = rpassword::read_password().expect("Error reading password");
 
     let master_password_input = master_password_input.trim();
 
@@ -149,9 +149,6 @@ fn generate_password_hash() -> Result<String, std::io::Error> {
 }
 
 fn initialize_application_directory(hashed_master_password: &[u8]) -> io::Result<()> {
-    //let home_directory = env::var("HOME").expect("[Error] Failed to get Home dir");
-    //let app_directory_path = PathBuf::from(home_directory).join("encrypt_app");
-
     let (_, master_password_path) = ApplicationDirectoryManager::get_application_directory();
     let (app_directory_path, _) = ApplicationDirectoryManager::get_application_directory();
 
@@ -167,8 +164,6 @@ fn initialize_application_directory(hashed_master_password: &[u8]) -> io::Result
             ),
         }
     }
-
-    //let master_password_path = PathBuf::from(app_directory_path).join("master_password");
 
     if ApplicationDirectoryManager::validate_master_password_file()? {
         println!("[*] File already exists at: {:?}", master_password_path);
@@ -205,27 +200,23 @@ fn generate_encryption_key(master_password: &str, password_salt: &[u8]) -> [u8; 
 }
 
 fn decrypt_encrypted_file(
-    encrypted_file: &str,
+    target_file: &str,
     output_path: &str,
     master_password: &str,
 ) -> Result<(), std::io::Error> {
     let file_validator = FileValidator {
-        target_file: encrypted_file.to_string(),
+        target_file: target_file.to_string(),
         target_directory: output_path.to_string(),
     };
 
     match file_validator.validate_dir_exists() {
         Ok(true) => match file_validator.validate_file_exists() {
             Ok(true) => {
-                println!("[*] Starting decryption for file: {}", encrypted_file);
+                println!("[*] Starting decryption for file: {}", target_file);
 
-                let mut input_file = File::open(encrypted_file).map_err(|e| {
-                    eprintln!(
-                        "[ERROR] Failed to open encrypted file: {}. Error: {}",
-                        encrypted_file, e
-                    );
-                    e
-                })?;
+                let input_file_path = format!("{}/{}", output_path, target_file);
+                let mut input_file = File::open(&input_file_path)?;
+
                 let mut password_salt = [0u8; 16];
                 input_file.read_exact(&mut password_salt)?;
                 let mut encryption_nonce = [0u8; NONCE_SIZE];
@@ -242,12 +233,20 @@ fn decrypt_encrypted_file(
                     .decrypt(&encryption_nonce.into(), encrypted_content.as_ref())
                     .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
 
-                let decrypted_filename = encrypted_file.trim_end_matches(".enc");
-                let output_file_path = format!("{}/{}", output_path, decrypted_filename);
-                let mut output_file = File::create(output_file_path)?;
+                // Create output path consistently with the encrypt function
+                let decrypted_filename = target_file.trim_end_matches(".enc");
+                let output_file_path;
+                let mut output_file;
+                if output_path.ends_with("/") {
+                    output_file_path = format!("{}{}", output_path, decrypted_filename);
+                    output_file = File::create(&output_file_path)?;
+                } else {
+                    output_file_path = format!("{}/{}", output_path, decrypted_filename);
+                    output_file = File::create(&output_file_path)?;
+                }
                 output_file.write_all(&decrypted_content)?;
 
-                println!("[*] Decrypted file created: {}", decrypted_filename);
+                println!("[*] Decrypted file created at: {}", output_file_path);
             }
             Ok(false) => {
                 eprintln!("[Error] File does not exist");
@@ -384,7 +383,7 @@ fn validate_and_exec<T>(
 where
     T: Fn(&str, &str, &str) -> Result<(), std::io::Error>,
 {
-    println!("> Enter your master password: ");
+    print!("> Enter your master password: ");
     io::stdout().flush()?;
     let master_password = rpassword::read_password().expect("Error reading password");
 
@@ -443,9 +442,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     }
 
-    //let mut is_dir_input = false;
     if let Some(ref dir) = target_directory {
-        println!("TARGET-DIR:: {:?}", dir);
+        println!("[INFO] Target Directory: {:?}", dir);
         let t_dir = fs::read_dir(dir)?
             .map(|res| res.map(|err| err.path()))
             .collect::<Result<Vec<_>, io::Error>>()?;
@@ -500,7 +498,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             "[ERROR] Below dir's cannot be encrypted/decrypted: \n{:?}",
             RESTRICTED_DIRECTORIES
         );
-        return Ok(()); // Return early if directory access is denied
+        return Ok(());
     }
 
     if is_file_input && input_files.is_empty() {
@@ -509,34 +507,45 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     if perform_encryption {
-        let mut count = 0;
-        for enc_file in input_files.iter() {
-            if enc_file.ends_with(".enc") {
-                println!("[ERROR] Couldn't encrypt files with ext: .enc");
-                process::exit(0);
-            } else {
-                validate_and_exec(&input_files, &directory_path, encrypt_target_file)?;
-                count += 1;
-            }
-            if count == 1 {
-                break;
+        let files_to_encrypt: Vec<String> = input_files
+            .iter()
+            .filter(|file| !file.ends_with(".enc"))
+            .cloned()
+            .collect();
+
+        if files_to_encrypt.is_empty() {
+            println!("[ERROR] No files found for encryption");
+            process::exit(0);
+        } else {
+            println!("[INFO] Encrypting files: {:?}", files_to_encrypt);
+            print!("> Do you want to continue with the operation? (y/n): ");
+            io::stdout().flush()?;
+            let mut input = String::new();
+            io::stdin().read_line(&mut input)?;
+            let input = input.trim().to_lowercase();
+            if input == "y" {
+                validate_and_exec(&files_to_encrypt, &directory_path, encrypt_target_file)?;
             }
         }
-    }
+    } else if perform_decryption {
+        let files_to_decrypt: Vec<String> = input_files
+            .iter()
+            .filter(|file| file.ends_with(".enc"))
+            .cloned()
+            .collect();
 
-    if perform_decryption {
-        let mut count = 0;
-        for decrypt_file in input_files.iter() {
-            if !decrypt_file.ends_with(".enc") {
-                println!("[ERROR] File is not encrypted: {:?}", decrypt_file);
-                process::exit(0);
-            } else {
-                println!("input files == {:?}", input_files);
-                validate_and_exec(&input_files, &directory_path, decrypt_encrypted_file)?;
-                count += 1;
-            }
-            if count == 1 {
-                break;
+        if files_to_decrypt.is_empty() {
+            println!("[ERROR] No encrypted files found");
+            process::exit(0);
+        } else {
+            println!("[INFO] Decrypting files: {:?}", files_to_decrypt);
+            let mut input = String::new();
+            print!("> Do you want to continue with the operation? (y/n): ");
+            io::stdout().flush()?;
+            std::io::stdin().read_line(&mut input)?;
+            let input = input.trim().to_lowercase();
+            if input.to_lowercase() == "y" {
+                validate_and_exec(&files_to_decrypt, &directory_path, decrypt_encrypted_file)?;
             }
         }
     }
