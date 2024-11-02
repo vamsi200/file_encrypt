@@ -431,6 +431,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut input_files: Vec<String> = Vec::new();
     let mut is_file_input = false;
 
+    if !perform_decryption && !perform_encryption && !display_help {
+        display_usage_instructions();
+        return Ok(());
+    }
+
     for arg in cli_args.iter().skip(1) {
         if arg == "-f" {
             is_file_input = true;
@@ -465,11 +470,6 @@ fn main() -> Result<(), Box<dyn Error>> {
         target_directory.unwrap_or_else(|| working_directory.display().to_string());
     let normalized_path = resolved_directory.trim();
     let directory_path = PathBuf::from(normalized_path);
-
-    if !perform_decryption && !perform_encryption && display_help {
-        display_usage_instructions();
-        return Ok(());
-    }
 
     match ApplicationDirectoryManager::validate_master_password_file() {
         Ok(true) => {
