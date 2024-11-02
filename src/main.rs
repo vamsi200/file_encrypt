@@ -442,18 +442,6 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     }
 
-    if let Some(ref dir) = target_directory {
-        println!("[INFO] Target Directory: {:?}", dir);
-        let t_dir = fs::read_dir(dir)?
-            .map(|res| res.map(|err| err.path()))
-            .collect::<Result<Vec<_>, io::Error>>()?;
-
-        for file in t_dir.iter() {
-            let file_name = file.file_name();
-            input_files.push(file_name.unwrap().to_string_lossy().into_owned());
-        }
-    }
-
     if cli_args.len() == 1 {
         eprintln!("[Error] No arguments provided.");
         display_usage_instructions();
@@ -468,6 +456,23 @@ fn main() -> Result<(), Box<dyn Error>> {
     if display_help {
         display_usage_instructions();
         return Ok(());
+    }
+
+    if is_file_input && input_files.is_empty() {
+        eprintln!("[Error] No files provided for encryption/decryption.");
+        return Ok(());
+    }
+
+    if let Some(ref dir) = target_directory {
+        println!("[INFO] Target Directory: {:?}", dir);
+        let t_dir = fs::read_dir(dir)?
+            .map(|res| res.map(|err| err.path()))
+            .collect::<Result<Vec<_>, io::Error>>()?;
+
+        for file in t_dir.iter() {
+            let file_name = file.file_name();
+            input_files.push(file_name.unwrap().to_string_lossy().into_owned());
+        }
     }
 
     let working_directory = env::current_dir()?;
@@ -503,11 +508,6 @@ fn main() -> Result<(), Box<dyn Error>> {
             "[ERROR] Below dir's cannot be encrypted/decrypted: \n{:?}",
             RESTRICTED_DIRECTORIES
         );
-        return Ok(());
-    }
-
-    if is_file_input && input_files.is_empty() {
-        eprintln!("[Error] No files provided for encryption/decryption.");
         return Ok(());
     }
 
