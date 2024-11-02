@@ -425,16 +425,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     let target_directory: Option<String> = cli_parser.opt_value_from_str("-d").unwrap_or(None);
     let perform_encryption = cli_parser.contains("--encrypt");
     let perform_decryption = cli_parser.contains("--decrypt");
-    let display_help = cli_parser.contains("-h") || cli_parser.contains("--help");
+    let display_help = cli_parser.contains("--help");
 
     let cli_args: Vec<String> = env::args().collect();
     let mut input_files: Vec<String> = Vec::new();
     let mut is_file_input = false;
-
-    if !perform_decryption && !perform_encryption && !display_help {
-        display_usage_instructions();
-        return Ok(());
-    }
 
     for arg in cli_args.iter().skip(1) {
         if arg == "-f" {
@@ -461,6 +456,16 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     if cli_args.len() == 1 {
         eprintln!("[Error] No arguments provided.");
+        display_usage_instructions();
+        return Ok(());
+    }
+
+    if !perform_decryption && !perform_encryption {
+        display_usage_instructions();
+        return Ok(());
+    }
+
+    if display_help {
         display_usage_instructions();
         return Ok(());
     }
