@@ -1,95 +1,103 @@
-File Encryption
+# File Encryption
 
-A Rust-based command-line utility for securely encrypting and decrypting files using AES-256-GCM encryption. This tool is designed for robust security, leveraging Argon2 for password hashing and PBKDF2 for key derivation.
+A robust command-line utility written in Rust for secure file encryption and decryption using AES-256-GCM. This tool combines industrial-strength security with user-friendly operation, featuring Argon2 for password hashing and PBKDF2 for key derivation.
 
-Features
+## Features
 
-Master Password Management: Securely hash and validate the master password using Argon2.
+- **Master Password Management**: Secure password handling with Argon2 hashing
+- **Strong Encryption**: AES-256-GCM encryption with authenticated encryption
+- **Path Validation**: Comprehensive file and directory path verification
+- **Automatic Metadata**: Integrated handling of cryptographic parameters
+- **User-Friendly CLI**: Simple command-line interface for all operations
 
-AES-256-GCM Encryption: Provides strong encryption for files with embedded metadata for decryption.
+## Getting Started
 
-File and Directory Validation: Ensures proper paths and file existence before performing operations.
+### Prerequisites
 
-Metadata Storage: Automatically handles salts and nonces within encrypted files.
+- Rust (latest stable version)
+- Terminal or command prompt
+- Git (for cloning the repository)
 
+### Installation
 
-Requirements
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/vamsi200/file_encrypt.git
+   cd file_encrypt
+   ```
 
-Rust (latest stable version) installed on your system. You can install Rust via rustup.
+2. Build the project:
+   ```bash
+   cargo build --release
+   ```
 
-A terminal or command prompt to execute the tool.
+3. The compiled binary will be available in `target/release/`.
 
-Installation
+## Usage
 
-Clone the Repository:
+### Encrypting Files
 
-git clone https://github.com/vamsi200/file_encrypt.git
-
-cd file_encrypt
-
-Build the Project:
-
-cargo build --release
-
-The compiled binary will be located in the target/release directory.
-
-Run the Tool:
-
-./target/release/file_encrypt
-
-Usage 
-Encrypt a File
-
-To encrypt a file:
-
+```bash
 ./file_encrypt --encrypt /path/to/your/file
+```
+The encrypted file will be created with a `.enc` extension.
 
-The encrypted file will have a .enc extension.
+### Decrypting Files
 
-Decrypt a File
-
-To decrypt a file:
-
+```bash
 ./file_encrypt --decrypt /path/to/your/file.enc
+```
+The file will be restored to its original form.
 
-The decrypted file will be restored to its original form.
+### Command Reference
 
-View Help Menu
-
-For a full list of available commands:
-
-./file_encrypt --help
-
+```
 Usage:
   -f <file>           : Specify a file
-  -d <dir>            : Specify a directory (default is the current directory)
+  -d <dir>            : Specify a directory (default is current)
   --encrypt           : Encrypt the file or directory
   --decrypt           : Decrypt the file or directory
-  -h or --help        : To print help
+  -h or --help        : Display help information
+```
 
-Examples:
-  ./need_to_change  -f file.txt file2.txt --encrypt      # Encrypt a file
-  ./need_to_change  -f file.txt file2.txt --decrypt      # decrypt multiple files
-  ./neeed_to_change -d /path/to/dir       --encrypt      # encrypt a directory
-  ./neeed_to_change -d /path/to/dir       --decrypt      # Decrypt a directory
+### Examples
 
+```bash
+# Encrypt single or multiple files
+./file_encrypt -f file.txt file2.txt --encrypt
 
+# Decrypt multiple files
+./file_encrypt -f file.txt file2.txt --decrypt
 
-Security Considerations
+# Encrypt a directory
+./file_encrypt -d /path/to/dir --encrypt
 
-Password Security: The master password is securely hashed using Argon2.
+# Decrypt a directory
+./file_encrypt -d /path/to/dir --decrypt
+```
 
-Encryption Strength: AES-256-GCM is used to ensure data confidentiality and integrity.
+## Security Features
 
-Metadata Management: Salt and nonce are embedded within encrypted files for proper decryption.
+- **Password Protection**: Argon2 hashing ensures secure password storage
+- **Modern Encryption**: AES-256-GCM provides authenticated encryption
+- **Secure Parameters**: Cryptographic salts and nonces are automatically managed
+- **Data Integrity**: Built-in authentication prevents tampering
 
-Warning
+## Important Notes
 
-Make sure to securely back up your master password. If it is lost, encrypted files cannot be decrypted.
+- **Backup Your Password**: There is no password recovery mechanism. Lost passwords mean permanently inaccessible files.
+- **Keep Backups**: Always maintain backups of important files before encryption.
+- **Secure Storage**: Store your master password securely - it's critical for decryption.
 
+## Security Considerations
 
-License
+This tool implements several security best practices:
+- Secure password hashing with Argon2
+- Strong encryption using AES-256-GCM
+- Proper handling of cryptographic parameters
+- Secure memory handling for sensitive data
 
-This project is licensed under the MIT License. See the LICENSE file for more details.
+## License
 
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
