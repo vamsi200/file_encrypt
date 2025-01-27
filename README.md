@@ -23,7 +23,8 @@ Installation
 
 Clone the Repository:
 
-git clone https://github.com/your-username/file_encrypt.git
+git clone https://github.com/vamsi200/file_encrypt.git
+
 cd file_encrypt
 
 Build the Project:
