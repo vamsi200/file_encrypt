@@ -35,20 +35,6 @@ A robust command-line utility written in Rust for secure file encryption and dec
 
 ## Usage
 
-### Encrypting Files
-
-```bash
-./file_encrypt --encrypt /path/to/your/file
-```
-The encrypted file will be created with a `.enc` extension.
-
-### Decrypting Files
-
-```bash
-./file_encrypt --decrypt /path/to/your/file.enc
-```
-The file will be restored to its original form.
-
 ### Command Reference
 
 ```
