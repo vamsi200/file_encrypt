@@ -1,5 +1,3 @@
-//#![allow(unused_imports)]
-#![allow(dead_code)]
 use aes_gcm::{
     aead::{Aead, AeadCore, KeyInit},
     Aes256Gcm,
@@ -19,8 +17,6 @@ use std::io::{BufRead, BufReader};
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 use std::{env, process};
-use sysinfo::System;
-const SALT_LENGTH: usize = 16;
 const PBKDF2_ITERATIONS: u32 = 100_000;
 const NONCE_SIZE: usize = 12;
 const RESTRICTED_DIRECTORIES: [&str; 9] = [
@@ -82,14 +78,6 @@ impl ApplicationDirectoryManager {
         (encrypt_app_path, master_password_path)
     }
 }
-
-fn calculate_available_threads() -> usize {
-    let mut system_info = System::new_all();
-    system_info.refresh_all();
-    let total_threads = system_info.cpus().len();
-    total_threads / 2
-}
-
 fn validate_master_password(password_input: &str) -> Result<bool, io::Error> {
     match ApplicationDirectoryManager::validate_master_password_file() {
         Ok(_) => {
