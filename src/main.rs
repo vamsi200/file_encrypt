@@ -357,10 +357,10 @@ fn display_usage_instructions() {
     println!("  -h or --help        : To print help");
     println!();
     println!("Examples:");
-    println!("  ./need_to_change  -f file.txt file2.txt --encrypt      # Encrypt a file");
-    println!("  ./need_to_change  -f file.txt file2.txt --decrypt      # decrypt multiple files");
-    println!("  ./neeed_to_change -d /path/to/dir       --encrypt      # encrypt a directory");
-    println!("  ./neeed_to_change -d /path/to/dir       --decrypt      # Decrypt a directory");
+    println!("  ./file_encrypt  -f file.txt file2.txt --encrypt      # Encrypt a file");
+    println!("  ./file_encrypt  -f file.txt file2.txt --decrypt      # decrypt multiple files");
+    println!("  ./file_encrypt -d /path/to/dir       --encrypt      # encrypt a directory");
+    println!("  ./file_encrypt -d /path/to/dir       --decrypt      # Decrypt a directory");
 }
 
 fn validate_and_exec<T>(
