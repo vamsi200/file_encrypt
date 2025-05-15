@@ -1,11 +1,13 @@
 todo:
-Handle directory access validation-done
-Implement directory resolution logic-done
-Refactor master password validation-done
-add output messages -- Improper Password Prompt in Encryption.
-refractor FileValidator-done
-check to NOT encrypt already encrypted file - Hardcoding Encryption/Decryption File Extensions -done
-Error handling in encryption/decryption functions.
-Add file and directory existence checks.
-Documentation and comments.
-may need to add proper logging
+- Handle directory access validation- done
+- Implement directory resolution logic- done
+- Refactor master password validation- done
+- add output messages -- Improper Password Prompt in Encryption.
+- refractor FileValidator- done
+- check to NOT encrypt already encrypted file - Hardcoding Encryption/Decryption File Extensions - done
+- Error handling in encryption/decryption functions - done, upto some level, will need to verify.
+- Add file and directory existence checks.
+- Documentation and comments.
+- may need to add proper logging
+- add file permissions like 600 to the master password
+- add anyhow
