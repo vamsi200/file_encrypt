@@ -1,4 +1,8 @@
 todo:
+**Problem with huge files**
+- I forgot to test with huge files and assumed that it is fine, which isn't it will eat up your RAM, will fix this
+
+
 - Handle directory access validation- done
 - Implement directory resolution logic- done
 - Refactor master password validation- done
