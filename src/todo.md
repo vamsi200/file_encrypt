@@ -1,6 +1,6 @@
 todo:
 **Problem with huge files**
-- I forgot to test with huge files and assumed that it is fine, which isn't it will eat up your RAM, will fix this
+- I forgot to test with huge files and assumed that it is fine, which isn't it will eat up your RAM, will fix this - yes read_to_end() is the problem
 
 
 - Handle directory access validation- done
