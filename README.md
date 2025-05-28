@@ -1,13 +1,11 @@
 # File Encryption
 
-A robust command-line utility written in Rust for secure file encryption and decryption using AES-256-GCM. This tool combines industrial-strength security with user-friendly operation, featuring Argon2 for password hashing and PBKDF2 for key derivation.
+A robust command-line utility written in Rust for secure file encryption and decryption using AES-256-GCM.
 
 ## Features
 
 - **Master Password Management**: Secure password handling with Argon2 hashing
 - **Strong Encryption**: AES-256-GCM encryption with authenticated encryption
-- **Path Validation**: Comprehensive file and directory path verification
-- **Automatic Metadata**: Integrated handling of cryptographic parameters
 - **User-Friendly CLI**: Simple command-line interface for all operations
 
 ## Getting Started
@@ -31,7 +29,7 @@ A robust command-line utility written in Rust for secure file encryption and dec
    cargo build --release
    ```
 
-3. The compiled binary will be available in `target/release/`.
+3. The binary will be available in `target/release/`.
 
 ## Usage
 
@@ -67,21 +65,12 @@ Usage:
 - **Password Protection**: Argon2 hashing ensures secure password storage
 - **Modern Encryption**: AES-256-GCM provides authenticated encryption
 - **Secure Parameters**: Cryptographic salts and nonces are automatically managed
-- **Data Integrity**: Built-in authentication prevents tampering
 
 ## Important Notes
 
 - **Backup Your Password**: There is no password recovery mechanism. Lost passwords mean permanently inaccessible files.
 - **Keep Backups**: Always maintain backups of important files before encryption.
 - **Secure Storage**: Store your master password securely - it's critical for decryption.
-
-## Security Considerations
-
-This tool implements several security best practices:
-- Secure password hashing with Argon2
-- Strong encryption using AES-256-GCM
-- Proper handling of cryptographic parameters
-- Secure memory handling for sensitive data
 
 ## License
 
