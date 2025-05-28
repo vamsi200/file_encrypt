@@ -1,24 +1,26 @@
 use aes_gcm::{
-    aead::{Aead, AeadCore, KeyInit},
-    Aes256Gcm,
+    aead::{Aead, KeyInit},
+    Aes256Gcm, Nonce,
 };
 use argon2::{
     password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
-    Argon2,
+    Argon2, Params,
 };
+use indicatif::{ProgressBar, ProgressStyle};
 use pico_args::Arguments;
 use rand::RngCore;
-use ring::pbkdf2;
 use std::error::Error;
 use std::fs::{self, File};
+use std::io::BufWriter;
 use std::io::Read;
 use std::io::{self, Write};
 use std::io::{BufRead, BufReader};
-use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 use std::{env, process};
-const PBKDF2_ITERATIONS: u32 = 100_000;
+use walkdir::WalkDir;
 const NONCE_SIZE: usize = 12;
+const SALT_SIZE: usize = 16;
+const CHUNK_SIZE: usize = 4096;
 const RESTRICTED_DIRECTORIES: [&str; 9] = [
     "/root", "/etc", "/bin", "/boot", "/dev", "/proc", "/sys", "/var", "/usr",
 ];
@@ -141,10 +143,13 @@ fn initialize_application_directory(hashed_master_password: &[u8]) -> io::Result
     let (app_directory_path, _) = ApplicationDirectoryManager::get_application_directory();
 
     if ApplicationDirectoryManager::validate_app_directory() {
-        println!("Directory already exists at: {:?}", app_directory_path);
+        println!(
+            "[INFO] Directory already exists at: {:?}",
+            app_directory_path
+        );
     } else {
         match fs::create_dir(&app_directory_path) {
-            Ok(_) => println!("[*] Successfully created dir:{:?}", app_directory_path),
+            Ok(_) => println!("[INFO] Successfully created dir:{:?}", app_directory_path),
 
             Err(e) => println!(
                 "[Error] Failed to create dir:{:?}, {}",
@@ -154,12 +159,12 @@ fn initialize_application_directory(hashed_master_password: &[u8]) -> io::Result
     }
 
     if ApplicationDirectoryManager::validate_master_password_file()? {
-        println!("[*] File already exists at: {:?}", master_password_path);
+        println!("[INFO] File already exists at: {:?}", master_password_path);
     } else {
         match File::create(&master_password_path) {
             Ok(mut password_file) => {
                 println!(
-                    "[*] Successfully created file with MasterPassword:{:?}",
+                    "[INFO] Successfully created file with MasterPassword:{:?}",
                     master_password_path
                 );
                 password_file.write_all(hashed_master_password)?;
@@ -176,15 +181,21 @@ fn initialize_application_directory(hashed_master_password: &[u8]) -> io::Result
 }
 
 fn generate_encryption_key(master_password: &str, password_salt: &[u8]) -> [u8; 32] {
-    let mut encryption_key = [0u8; 32];
-    pbkdf2::derive(
-        pbkdf2::PBKDF2_HMAC_SHA256,
-        NonZeroU32::new(PBKDF2_ITERATIONS).unwrap(),
-        password_salt,
-        master_password.as_bytes(),
-        &mut encryption_key,
-    );
-    encryption_key
+    let mut key = [0u8; 32];
+    let params = Params::new(
+        512 * 1024,
+        10,
+        4,        // parallelism
+        Some(32), // output length
+    )
+    .unwrap();
+
+    let argon2 = Argon2::new(argon2::Algorithm::Argon2id, argon2::Version::V0x13, params);
+    argon2
+        .hash_password_into(master_password.as_bytes(), password_salt, &mut key)
+        .unwrap();
+
+    key
 }
 
 fn decrypt_encrypted_file(
@@ -197,61 +208,60 @@ fn decrypt_encrypted_file(
         target_directory: output_path.to_string(),
     };
 
-    match file_validator.validate_dir_exists() {
-        Ok(true) => match file_validator.validate_file_exists() {
-            Ok(true) => {
-                println!("[*] Starting decryption for file: {}", target_file);
-
-                let input_file_path = format!("{}/{}", output_path, target_file);
-                let mut input_file = File::open(&input_file_path)?;
-
-                let mut password_salt = [0u8; 16];
-                input_file.read_exact(&mut password_salt)?;
-                let mut encryption_nonce = [0u8; NONCE_SIZE];
-                input_file.read_exact(&mut encryption_nonce)?;
-
-                let mut encrypted_content = Vec::new();
-                input_file.read_to_end(&mut encrypted_content)?;
-
-                let encryption_key = generate_encryption_key(master_password, &password_salt);
-                let cipher = Aes256Gcm::new_from_slice(&encryption_key)
-                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
-
-                let decrypted_content = cipher
-                    .decrypt(&encryption_nonce.into(), encrypted_content.as_ref())
-                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
-
-                // Create output path consistently with the encrypt function
-                let decrypted_filename = target_file.trim_end_matches(".enc");
-                let output_file_path;
-                let mut output_file;
-                if output_path.ends_with("/") {
-                    output_file_path = format!("{}{}", output_path, decrypted_filename);
-                    output_file = File::create(&output_file_path)?;
-                } else {
-                    output_file_path = format!("{}/{}", output_path, decrypted_filename);
-                    output_file = File::create(&output_file_path)?;
-                }
-                output_file.write_all(&decrypted_content)?;
-
-                println!("[*] Decrypted file created at: {}", output_file_path);
-            }
-            Ok(false) => {
-                eprintln!("[Error] File does not exist");
-            }
-            Err(e) => {
-                eprintln!("[ERROR]:file {}", e);
-                return Err(e);
-            }
-        },
-        Ok(false) => {
-            eprintln!("[Error] Directory does not exist.");
-        }
-        Err(e) => {
-            eprintln!("[ERROR]: {}", e);
-            return Err(e);
-        }
+    if !file_validator.validate_dir_exists()? {
+        eprintln!("[Error] Directory does not exist.");
+        return Ok(());
     }
+
+    if !file_validator.validate_file_exists()? {
+        eprintln!("[Error] File does not exist");
+        return Ok(());
+    }
+
+    let input_file_path = format!("{}/{}", output_path, target_file);
+    let input_file = BufReader::new(File::open(&input_file_path)?);
+
+    let mut reader = input_file;
+
+    let mut password_salt = [0u8; SALT_SIZE];
+    reader.read_exact(&mut password_salt)?;
+
+    let encryption_key = generate_encryption_key(master_password, &password_salt);
+    let cipher = Aes256Gcm::new_from_slice(&encryption_key)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+
+    let decrypted_filename = target_file.trim_end_matches(".enc");
+    let output_file_path = if output_path.ends_with("/") {
+        format!("{}{}", output_path, decrypted_filename)
+    } else {
+        format!("{}/{}", output_path, decrypted_filename)
+    };
+    let mut output_file = BufWriter::new(File::create(&output_file_path)?);
+
+    loop {
+        let mut nonce_bytes = [0u8; NONCE_SIZE];
+        match reader.read_exact(&mut nonce_bytes) {
+            Ok(_) => {}
+            Err(ref e) if e.kind() == std::io::ErrorKind::UnexpectedEof => break,
+            Err(e) => return Err(e),
+        }
+        let nonce = Nonce::from_slice(&nonce_bytes);
+
+        let mut len_buf = [0u8; 4];
+        reader.read_exact(&mut len_buf)?;
+        let chunk_len = u32::from_be_bytes(len_buf) as usize;
+
+        let mut encrypted_chunk = vec![0u8; chunk_len];
+        reader.read_exact(&mut encrypted_chunk)?;
+
+        let decrypted_chunk = cipher
+            .decrypt(nonce, encrypted_chunk.as_ref())
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+
+        output_file.write_all(&decrypted_chunk)?;
+    }
+
+    output_file.flush()?;
     Ok(())
 }
 
@@ -265,53 +275,53 @@ fn encrypt_target_file(
         target_directory: output_path.to_string(),
     };
 
-    match file_validator.validate_dir_exists() {
-        Ok(true) => match file_validator.validate_file_exists() {
-            Ok(true) => {
-                println!("[*] Starting encryption for file: {}", target_file);
-                let encryption_nonce = Aes256Gcm::generate_nonce(&mut OsRng);
-                let mut password_salt = [0u8; 16];
-                OsRng.fill_bytes(&mut password_salt);
-
-                let encryption_key = generate_encryption_key(master_password, &password_salt);
-                let cipher = Aes256Gcm::new_from_slice(&encryption_key)
-                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
-
-                let input_file_path = format!("{}/{}", output_path, target_file);
-                let mut input_file = File::open(&input_file_path)?;
-                let mut file_content = Vec::new();
-                input_file.read_to_end(&mut file_content)?;
-
-                let encrypted_content = cipher
-                    .encrypt(&encryption_nonce, file_content.as_ref())
-                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
-
-                let encrypted_file_path = format!("{}/{}.enc", output_path, target_file);
-                let mut encrypted_file = File::create(&encrypted_file_path)?;
-
-                encrypted_file.write_all(&password_salt)?;
-                encrypted_file.write_all(&encryption_nonce)?;
-                encrypted_file.write_all(&encrypted_content)?;
-
-                println!("[*] Encrypted file created at: {}", encrypted_file_path);
-            }
-            Ok(false) => {
-                eprintln!("[Error] File does not exist");
-            }
-
-            Err(e) => {
-                eprintln!("[ERROR]:file {}", e);
-                return Err(e);
-            }
-        },
-        Ok(false) => {
-            eprintln!("[Error] Directory does not exist.");
-        }
-        Err(e) => {
-            eprintln!("[ERROR]: {}", e);
-            return Err(e);
-        }
+    if !file_validator.validate_dir_exists()? {
+        eprintln!("[Error] Directory does not exist.");
+        return Ok(());
     }
+
+    if !file_validator.validate_file_exists()? {
+        eprintln!("[Error] File does not exist");
+        return Ok(());
+    }
+
+    let mut password_salt = [0u8; 16];
+    OsRng.fill_bytes(&mut password_salt);
+    let encryption_key = generate_encryption_key(master_password, &password_salt);
+    let cipher = Aes256Gcm::new_from_slice(&encryption_key)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+
+    let input_file_path = format!("{}/{}", output_path, target_file);
+    let encrypted_file_path = format!("{}/{}.enc", output_path, target_file);
+
+    let input_file = BufReader::new(File::open(&input_file_path)?);
+    let mut encrypted_file = BufWriter::new(File::create(&encrypted_file_path)?);
+
+    encrypted_file.write_all(&password_salt)?;
+
+    let mut buffer = [0u8; CHUNK_SIZE];
+    let mut reader = input_file;
+    loop {
+        let bytes_read = reader.read(&mut buffer)?;
+        if bytes_read == 0 {
+            break;
+        }
+        let chunk = &buffer[..bytes_read];
+        let mut nonce_bytes = [0u8; 12];
+        OsRng.fill_bytes(&mut nonce_bytes);
+        let nonce = Nonce::from_slice(&nonce_bytes);
+
+        let encrypted_chunk = cipher
+            .encrypt(nonce, chunk)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+
+        encrypted_file.write_all(&nonce_bytes)?;
+        let chunk_len = (encrypted_chunk.len() as u32).to_be_bytes();
+        encrypted_file.write_all(&chunk_len)?;
+        encrypted_file.write_all(&encrypted_chunk)?;
+    }
+
+    encrypted_file.flush()?;
     Ok(())
 }
 
@@ -375,34 +385,49 @@ where
     io::stdout().flush()?;
     let master_password = rpassword::read_password().expect("Error reading password");
 
-    if ApplicationDirectoryManager::validate_app_directory() {
-        if ApplicationDirectoryManager::validate_master_password_file()? {
-            match validate_master_password(&master_password) {
-                Ok(is_valid) => {
-                    if is_valid {
-                        for file_path in input_files {
-                            let result = opp(
-                                file_path,
-                                directory_path.to_str().unwrap(),
-                                &master_password,
-                            );
-                            if let Err(e) = result {
-                                eprintln!("[Error] Failed to process file '{}': {}", file_path, e);
-                            }
-                        }
-                    } else {
-                        eprintln!("[Error] Incorrect password. Operation aborted.");
-                    }
-                }
-                Err(e) => {
-                    eprintln!("[Error] Password validation failed: {}", e);
-                }
-            }
-        } else {
-            eprintln!("[Error] Master password file not found.");
-        }
-    } else {
+    if !ApplicationDirectoryManager::validate_app_directory() {
         eprintln!("[Error] Application directory not found.");
+        return Ok(());
+    }
+
+    if !ApplicationDirectoryManager::validate_master_password_file()? {
+        eprintln!("[Error] Master password file not found.");
+        return Ok(());
+    }
+
+    match validate_master_password(&master_password) {
+        Ok(true) => {
+            let pb = ProgressBar::new(input_files.len() as u64);
+            pb.set_style(
+                ProgressStyle::with_template(
+                    "[{elapsed_precise}] [{bar:40.green/blue}] {pos}/{len} {msg}",
+                )
+                .unwrap()
+                .progress_chars("##-"),
+            );
+
+            for file_path in input_files {
+                let result = opp(
+                    file_path,
+                    directory_path.to_str().unwrap(),
+                    &master_password,
+                );
+
+                if let Err(e) = result {
+                    pb.println(format!("[Error] Failed to process '{}': {}", file_path, e));
+                }
+
+                pb.inc(1);
+            }
+
+            pb.finish_with_message("Operation completed.");
+        }
+        Ok(false) => {
+            eprintln!("[Error] Incorrect password. Operation aborted.");
+        }
+        Err(e) => {
+            eprintln!("[Error] Password validation failed: {}", e);
+        }
     }
 
     Ok(())
@@ -414,6 +439,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let perform_encryption = cli_parser.contains("--encrypt");
     let perform_decryption = cli_parser.contains("--decrypt");
     let display_help = cli_parser.contains("--help");
+    let depth_limit: Option<usize> = cli_parser.opt_value_from_str("--depth").unwrap_or(None);
 
     let cli_args: Vec<String> = env::args().collect();
     let mut input_files: Vec<String> = Vec::new();
@@ -426,6 +452,18 @@ fn main() -> Result<(), Box<dyn Error>> {
             if arg.starts_with('-') {
                 break;
             }
+
+            let path = Path::new(arg);
+            let metadata = fs::symlink_metadata(path)?;
+            if path.is_dir() {
+                println!("[INFO] Skipping directory - {}", arg);
+                continue;
+            }
+            if metadata.is_dir() {
+                println!("[INFO] Skipping directory - {}", arg);
+                continue;
+            }
+
             input_files.push(arg.clone());
         }
     }
@@ -452,14 +490,17 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     if let Some(ref dir) = target_directory {
-        println!("[INFO] Target Directory: {:?}", dir);
-        let t_dir = fs::read_dir(dir)?
-            .map(|res| res.map(|err| err.path()))
-            .collect::<Result<Vec<_>, io::Error>>()?;
+        println!("[INFO] Target Directory: {}", dir);
 
-        for file in t_dir.iter() {
-            let file_name = file.file_name();
-            input_files.push(file_name.unwrap().to_string_lossy().into_owned());
+        for entry in WalkDir::new(dir)
+            .max_depth(depth_limit.unwrap_or(usize::MAX))
+            .into_iter()
+            .filter_map(Result::ok)
+            .filter(|e| e.file_type().is_file())
+        {
+            let path = entry.path();
+            let relative_path = path.strip_prefix(dir).unwrap();
+            input_files.push(relative_path.display().to_string());
         }
     }
 
@@ -471,10 +512,10 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     match ApplicationDirectoryManager::validate_master_password_file() {
         Ok(true) => {
-            println!("[INFO] Password File exists.. Continuing..");
+            println!("[INFO] Master Password File exists, Continuing..");
         }
         Ok(false) => {
-            println!("[INFO] Password File doesn't exist, Please set a Master Password to start");
+            println!("[WARN] Password File doesn't exist, Please set a Master Password to start");
 
             match generate_password_hash() {
                 Ok(hash) => {
@@ -482,7 +523,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     if let Err(e) = initialize_application_directory(hashed_password_bytes) {
                         eprintln!("[ERROR] Couldn't Save Master Password: {}", e);
                     } else {
-                        println!("[INFO] Successfully created & saved Master Password");
+                        println!("[SUCCESS] Successfully created & saved Master Password");
                     }
                 }
                 Err(e) => eprintln!("[ERROR] Couldn't hash password: {}", e),
@@ -492,10 +533,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     if validate_directory_access(&directory_path) {
-        eprintln!(
-            "[ERROR] Below dir's cannot be encrypted/decrypted: \n{:?}",
-            RESTRICTED_DIRECTORIES
-        );
+        eprintln!("[ERROR] Below dir's cannot be encrypted/decrypted:",);
+        for dir in RESTRICTED_DIRECTORIES {
+            println!("- {}", dir);
+        }
         return Ok(());
     }
 
@@ -510,7 +551,10 @@ fn main() -> Result<(), Box<dyn Error>> {
             println!("[ERROR] No files found for encryption");
             process::exit(0);
         } else {
-            println!("[INFO] Encrypting files: {:?}", files_to_encrypt);
+            println!("Encrypting files:");
+            for file in &files_to_encrypt {
+                println!("- {}", file);
+            }
             print!("> Do you want to continue with the operation? (y/n): ");
             io::stdout().flush()?;
             let mut input = String::new();
@@ -531,7 +575,10 @@ fn main() -> Result<(), Box<dyn Error>> {
             println!("[ERROR] No encrypted files found");
             process::exit(0);
         } else {
-            println!("[INFO] Decrypting files: {:?}", files_to_decrypt);
+            println!("Decrypting files:");
+            for file in &files_to_decrypt {
+                println!("- {}", file);
+            }
             let mut input = String::new();
             print!("> Do you want to continue with the operation? (y/n): ");
             io::stdout().flush()?;
