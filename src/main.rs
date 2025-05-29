@@ -364,13 +364,20 @@ fn display_usage_instructions() {
     println!("  -d <dir>            : Specify a directory (default is the current directory)");
     println!("  --encrypt           : Encrypt the file or directory");
     println!("  --decrypt           : Decrypt the file or directory");
+    println!("  --depth <level>     : Depth of encryption/decryption");
     println!("  -h or --help        : To print help");
     println!();
     println!("Examples:");
-    println!("  ./file_encrypt  -f file.txt file2.txt --encrypt      # Encrypt a file");
-    println!("  ./file_encrypt  -f file.txt file2.txt --decrypt      # decrypt multiple files");
-    println!("  ./file_encrypt -d /path/to/dir       --encrypt      # encrypt a directory");
-    println!("  ./file_encrypt -d /path/to/dir       --decrypt      # Decrypt a directory");
+    println!("  ./file_encrypt -f file.txt             --encrypt     # Encrypt a file");
+    println!("  ./file_encrypt -f file.txt file2.txt   --decrypt     # decrypt multiple files");
+    println!("  ./file_encrypt -d /path/to/dir         --encrypt     # encrypt a directory");
+    println!("  ./file_encrypt -d /path/to/dir         --decrypt     # Decrypt a directory");
+    println!(
+        "  ./file_encrypt -d /path/to/dir --depth 1 --encrypt   # encrypt a directory with depth 1"
+    );
+    println!(
+        "  ./file_encrypt -d /path/to/dir --depth 1 --decrypt   # decrypt a directory with depth 1"
+    );
 }
 
 fn validate_and_exec<T>(
