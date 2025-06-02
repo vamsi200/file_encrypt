@@ -9,7 +9,6 @@ use argon2::{
 use indicatif::{ProgressBar, ProgressStyle};
 use pico_args::Arguments;
 use rand::RngCore;
-use std::error::Error;
 use std::fs::{self, File};
 use std::io::BufWriter;
 use std::io::Read;
@@ -17,6 +16,7 @@ use std::io::{self, Write};
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::{env, process};
+use std::{error::Error, time};
 use walkdir::WalkDir;
 const NONCE_SIZE: usize = 12;
 const SALT_SIZE: usize = 16;
@@ -401,33 +401,44 @@ where
         eprintln!("[Error] Master password file not found.");
         return Ok(());
     }
-
     match validate_master_password(&master_password) {
         Ok(true) => {
-            let pb = ProgressBar::new(input_files.len() as u64);
-            pb.set_style(
-                ProgressStyle::with_template(
-                    "[{elapsed_precise}] [{bar:40.green/blue}] {pos}/{len} {msg}",
-                )
-                .unwrap()
-                .progress_chars("##-"),
-            );
+            for (index, file_path) in input_files.iter().enumerate() {
+                let spinner = ProgressBar::new_spinner();
+                spinner.set_style(
+                    ProgressStyle::with_template("{spinner} [{elapsed_precise}] {msg}").unwrap(),
+                );
+                spinner.set_message(format!("Processing - '{}'", file_path.clone()));
+                spinner.enable_steady_tick(time::Duration::from_millis(100));
 
-            for file_path in input_files {
                 let result = opp(
                     file_path,
                     directory_path.to_str().unwrap(),
                     &master_password,
                 );
 
-                if let Err(e) = result {
-                    pb.println(format!("[Error] Failed to process '{}': {}", file_path, e));
+                spinner.finish_and_clear();
+
+                match result {
+                    Ok(_) => {
+                        println!(
+                            "[{}/{}] Successfully processed - '{}'",
+                            index + 1,
+                            input_files.len(),
+                            file_path
+                        );
+                    }
+                    Err(e) => {
+                        eprintln!(
+                            "[{}/{}] Failed to process - '{}': {}",
+                            index + 1,
+                            input_files.len(),
+                            file_path,
+                            e
+                        );
+                    }
                 }
-
-                pb.inc(1);
             }
-
-            pb.finish_with_message("Operation completed.");
         }
         Ok(false) => {
             eprintln!("[Error] Incorrect password. Operation aborted.");
