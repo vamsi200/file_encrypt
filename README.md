@@ -37,10 +37,11 @@ A robust command-line utility written in Rust for secure file encryption and dec
 
 ```
 Usage:
-  -f <file>           : Specify a file
+  -f <file>           : Specify one or more files
   -d <dir>            : Specify a directory (default is current)
   --encrypt           : Encrypt the file or directory
   --decrypt           : Decrypt the file or directory
+  --depth <n>         : Encrypt/Decrypt the directory with depth 'n'
   -h or --help        : Display help information
 ```
 
@@ -58,6 +59,12 @@ Usage:
 
 # Decrypt a directory
 ./file_encrypt -d /path/to/dir --decrypt
+
+# encrypt a directory with depth 1
+./file_encrypt -d /path/to/dir --depth 1 --encrypt
+
+# decrypt a directory with depth 1
+./file_encrypt -d /path/to/dir --depth 1 --decrypt
 ```
 
 ## Security Features
