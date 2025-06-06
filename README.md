@@ -2,11 +2,32 @@
 
 A robust command-line utility written in Rust for secure file encryption and decryption using AES-256-GCM.
 
-## Features
+## Security Features
 
-- **Master Password Management**: Secure password handling with Argon2 hashing
-- **Strong Encryption**: AES-256-GCM encryption with authenticated encryption
-- **User-Friendly CLI**: Simple command-line interface for all operations
+- **Password Protection**: Argon2id hashing ensures secure password storage with resistance to brute-force and GPU attacks.
+- **Modern Encryption**: AES-256-GCM provides authenticated encryption to prevent tampering and ensure data integrity.
+- **Hardened Key Derivation**: Keys are derived using Argon2id with the following parameters:
+  - Memory cost: `512 KB`
+  - Iterations: `10`
+  - Parallelism: `4 threads`
+  - Output length: `32 bytes` (256-bit key)
+- **Salted Password Hashing**: Master passwords are hashed with Argon2id using:
+  - Algorithm: `Argon2id`
+  - Random per-user salt
+  - Default Argon2id parameters
+
+## Important Notes
+
+- **Master Password is Critical**
+  - The tool stores a Master Password file in your `$HOME` directory.
+  - There is **no password recovery mechanism**.
+  - If the Master Password file is deleted, the tool will prompt you to create a new one.
+  - However, files encrypted with the original password can **still be decrypted** if you remember that password.
+
+- **Always Keep Backups**
+  - Before encrypting important files, ensure you maintain backups.
+  - This prevents accidental data loss due to forgotten passwords or corruption.
+
 
 ## Getting Started
 
@@ -66,18 +87,6 @@ Usage:
 # decrypt a directory with depth 1
 ./file_encrypt -d /path/to/dir --depth 1 --decrypt
 ```
-
-## Security Features
-
-- **Password Protection**: Argon2 hashing ensures secure password storage
-- **Modern Encryption**: AES-256-GCM provides authenticated encryption
-- **Secure Parameters**: Cryptographic salts and nonces are automatically managed
-
-## Important Notes
-
-- **Backup Your Password**: There is no password recovery mechanism. Lost passwords mean permanently inaccessible files.
-- **Keep Backups**: Always maintain backups of important files before encryption.
-- **Secure Storage**: Store your master password securely - it's critical for decryption.
 
 ## License
 
