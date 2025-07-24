@@ -7,7 +7,7 @@ A robust command-line utility written in Rust for secure file encryption and dec
 - **Password Protection**: Argon2id hashing ensures secure password storage with resistance to brute-force and GPU attacks.
 - **Modern Encryption**: AES-256-GCM provides authenticated encryption to prevent tampering and ensure data integrity.
 - **Hardened Key Derivation**: Keys are derived using Argon2id with the following parameters:
-  - Memory cost: `512 KB`
+  - Memory cost: `512 MB`
   - Iterations: `10`
   - Parallelism: `4 threads`
   - Output length: `32 bytes` (256-bit key)
