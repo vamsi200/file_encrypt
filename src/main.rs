@@ -102,7 +102,7 @@ fn validate_master_password(password_input: &str) -> Result<bool, io::Error> {
             match Argon2::default().verify_password(password_input.as_bytes(), &parsed_hash) {
                 Ok(_) => Ok(true), // Password is correct
                 Err(e) => {
-                    eprintln!("[Error] Incorrect password: {}", e);
+                    eprintln!("[Error] {}", e);
                     Ok(false) // Password is incorrect
                 }
             }
@@ -182,13 +182,7 @@ fn initialize_application_directory(hashed_master_password: &[u8]) -> io::Result
 
 fn generate_encryption_key(master_password: &str, password_salt: &[u8]) -> [u8; 32] {
     let mut key = [0u8; 32];
-    let params = Params::new(
-        512 * 1024,
-        10,
-        4,        // parallelism
-        Some(32), // output length
-    )
-    .unwrap();
+    let params = Params::new(512 * 1024, 10, 4, Some(32)).unwrap();
 
     let argon2 = Argon2::new(argon2::Algorithm::Argon2id, argon2::Version::V0x13, params);
     argon2
@@ -401,50 +395,43 @@ where
         eprintln!("[Error] Master password file not found.");
         return Ok(());
     }
-    match validate_master_password(&master_password) {
-        Ok(true) => {
-            for (index, file_path) in input_files.iter().enumerate() {
-                let spinner = ProgressBar::new_spinner();
-                spinner.set_style(
-                    ProgressStyle::with_template("{spinner} [{elapsed_precise}] {msg}").unwrap(),
-                );
-                spinner.set_message(format!("Processing - '{}'", file_path.clone()));
-                spinner.enable_steady_tick(time::Duration::from_millis(100));
 
-                let result = opp(
-                    file_path,
-                    directory_path.to_str().unwrap(),
-                    &master_password,
-                );
+    if validate_master_password(&master_password)? {
+        for (index, file_path) in input_files.iter().enumerate() {
+            let spinner = ProgressBar::new_spinner();
+            spinner.set_style(
+                ProgressStyle::with_template("{spinner} [{elapsed_precise}] {msg}").unwrap(),
+            );
+            spinner.set_message(format!("Processing - '{}'", file_path.clone()));
+            spinner.enable_steady_tick(time::Duration::from_millis(100));
 
-                spinner.finish_and_clear();
+            let result = opp(
+                file_path,
+                directory_path.to_str().unwrap(),
+                &master_password,
+            );
 
-                match result {
-                    Ok(_) => {
-                        println!(
-                            "[{}/{}] Successfully processed - '{}'",
-                            index + 1,
-                            input_files.len(),
-                            file_path
-                        );
-                    }
-                    Err(e) => {
-                        eprintln!(
-                            "[{}/{}] Failed to process - '{}': {}",
-                            index + 1,
-                            input_files.len(),
-                            file_path,
-                            e
-                        );
-                    }
+            spinner.finish_and_clear();
+
+            match result {
+                Ok(_) => {
+                    println!(
+                        "[{}/{}] Successfully processed - '{}'",
+                        index + 1,
+                        input_files.len(),
+                        file_path
+                    );
+                }
+                Err(e) => {
+                    eprintln!(
+                        "[{}/{}] Failed to process - '{}': {}",
+                        index + 1,
+                        input_files.len(),
+                        file_path,
+                        e
+                    );
                 }
             }
-        }
-        Ok(false) => {
-            eprintln!("[Error] Incorrect password. Operation aborted.");
-        }
-        Err(e) => {
-            eprintln!("[Error] Password validation failed: {}", e);
         }
     }
 
